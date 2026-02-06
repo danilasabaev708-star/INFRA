@@ -46,7 +46,13 @@ class Settings(BaseSettings):
         raw_tma = self.tma_origins or self.tma_origin
         if raw_tma:
             origins.extend([origin.strip() for origin in raw_tma.split(",") if origin.strip()])
-        return list(dict.fromkeys(origins))
+        seen: set[str] = set()
+        unique_origins: list[str] = []
+        for origin in origins:
+            if origin not in seen:
+                unique_origins.append(origin)
+                seen.add(origin)
+        return unique_origins
 
     @property
     def admin_id_list(self) -> list[int]:

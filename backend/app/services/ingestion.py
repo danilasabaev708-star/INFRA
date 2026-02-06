@@ -108,8 +108,6 @@ async def ingest_rss_source(session: AsyncSession, source: Source) -> int:
         if not title:
             continue
         published_at = _parse_entry_datetime(entry)
-        if last_published_at and published_at and published_at <= last_published_at:
-            continue
         text = _extract_entry_text(entry).strip()
         if not text:
             text = title
