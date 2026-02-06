@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict
 class TopicCreate(BaseModel):
     name: str
     description: str | None = None
+    keywords: list[str] | None = None
+    order: int | None = None
 
 
 class TopicOut(BaseModel):
@@ -16,9 +18,13 @@ class TopicOut(BaseModel):
     id: int
     name: str
     description: str | None = None
+    keywords: list[str] | None = None
+    order: int | None = None
     created_at: datetime
 
 
 class TopicUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
+    keywords: list[str] | None = None
+    order: int | None = None

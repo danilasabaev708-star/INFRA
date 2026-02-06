@@ -18,6 +18,7 @@ class Source(Base):
     trust_manual: Mapped[int] = mapped_column(Integer, default=50)
     job_keywords: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     job_regex: Mapped[str | None] = mapped_column(Text, nullable=True)
+    state: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

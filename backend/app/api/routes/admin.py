@@ -10,6 +10,7 @@ from app.api.deps import require_admin_session
 from app.core.rate_limits import PlanTier
 from app.db.session import get_session
 from app.models.alert import Alert
+from app.models.item import Item
 from app.models.metric import Metric
 from app.models.org import Org, OrgMember
 from app.models.source import Source
@@ -19,6 +20,7 @@ from app.models.user import User
 from app.schemas import (
     AlertMuteRequest,
     AlertOut,
+    ItemOut,
     ManualGrantRequest,
     ManualRevokeRequest,
     MetricOut,
@@ -163,6 +165,24 @@ async def delete_topic(
     await session.delete(topic)
     await session.commit()
     return {"message": "Тема удалена."}
+
+
+@router.get("/items", response_model=list[ItemOut])
+async def list_items_admin(
+    session: AsyncSession = Depends(get_session),
+    from_: datetime | None = Query(default=None, alias="from"),
+    to: datetime | None = Query(default=None, alias="to"),
+    source_id: int | None = None,
+) -> list[ItemOut]:
+    stmt = select(Item)
+    if source_id is not None:
+        stmt = stmt.where(Item.source_id == source_id)
+    if from_:
+        stmt = stmt.where(Item.published_at >= from_)
+    if to:
+        stmt = stmt.where(Item.published_at <= to)
+    result = await session.execute(stmt.order_by(Item.published_at.desc().nullslast(), Item.id.desc()))
+    return [ItemOut.model_validate(item) for item in result.scalars().all()]
 
 
 @router.get("/alerts", response_model=list[AlertOut])
