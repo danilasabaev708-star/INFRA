@@ -31,7 +31,6 @@ def upgrade() -> None:
         sa.Column("trust_status", sa.String(length=16), nullable=True),
         sa.Column("sentinel_json", sa.JSON(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()")),
-        sa.UniqueConstraint("content_hash"),
     )
     op.create_index("ix_items_content_hash", "items", ["content_hash"], unique=True)
     op.create_index("ix_items_source_id", "items", ["source_id"], unique=False)

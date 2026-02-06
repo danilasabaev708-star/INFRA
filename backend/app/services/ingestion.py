@@ -55,8 +55,9 @@ def compute_content_hash(title: str, url: str | None, text: str) -> str:
 
 def _extract_entry_text(entry: dict) -> str:
     text = entry.get("summary") or entry.get("description")
-    if not text and entry.get("content"):
-        content_value = entry.get("content")[0]
+    content_list = entry.get("content")
+    if not text and content_list:
+        content_value = content_list[0]
         if isinstance(content_value, dict):
             text = content_value.get("value")
     if not text:

@@ -173,6 +173,7 @@ async def list_items_admin(
     from_: datetime | None = Query(default=None, alias="from"),
     to: datetime | None = Query(default=None, alias="to"),
     source_id: int | None = None,
+    limit: int = Query(default=200, ge=1, le=500),
 ) -> list[ItemOut]:
     stmt = select(Item)
     if source_id is not None:
@@ -181,7 +182,9 @@ async def list_items_admin(
         stmt = stmt.where(Item.published_at >= from_)
     if to:
         stmt = stmt.where(Item.published_at <= to)
-    result = await session.execute(stmt.order_by(Item.published_at.desc().nullslast(), Item.id.desc()))
+    result = await session.execute(
+        stmt.order_by(Item.published_at.desc().nullslast(), Item.id.desc()).limit(limit)
+    )
     return [ItemOut.model_validate(item) for item in result.scalars().all()]
 
 
