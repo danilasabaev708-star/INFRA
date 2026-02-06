@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import html
+import logging
 import re
 import time
 from dataclasses import dataclass
@@ -18,6 +19,7 @@ from app.models.item import Item
 from app.models.source import Source
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 _TAG_RE = re.compile(r"<[^>]+>")
 _HASH_TEXT_LIMIT = 500
 
@@ -34,6 +36,13 @@ def _normalize_text(value: str) -> str:
 
 def _strip_html(value: str) -> str:
     return _TAG_RE.sub(" ", value)
+
+
+def _normalize_lang(value: str | None) -> str:
+    if not value:
+        return "ru"
+    normalized = value.split(",")[0].strip()
+    return normalized[:8] if normalized else "ru"
 
 
 def compute_content_hash(title: str, url: str | None, text: str) -> str:
@@ -75,6 +84,13 @@ async def ingest_rss_source(session: AsyncSession, source: Source) -> int:
         return 0
     feed = await asyncio.to_thread(feedparser.parse, source.url)
     entries = list(getattr(feed, "entries", []) or [])
+    feed_meta = getattr(feed, "feed", {}) or {}
+    feed_lang = None
+    if isinstance(feed_meta, dict):
+        feed_lang = feed_meta.get("language") or feed_meta.get("lang")
+    else:
+        feed_lang = getattr(feed_meta, "language", None) or getattr(feed_meta, "lang", None)
+    lang = _normalize_lang(str(feed_lang) if feed_lang else None)
     state = dict(source.state or {})
     last_published_at = None
     if state.get("last_published_at"):
@@ -109,7 +125,7 @@ async def ingest_rss_source(session: AsyncSession, source: Source) -> int:
             text=text,
             published_at=published_at,
             content_hash=content_hash,
-            lang="ru",
+            lang=lang,
             is_job=False,
         )
         session.add(item)
@@ -139,6 +155,7 @@ async def ingestion_loop(stop_event: asyncio.Event) -> None:
                 await ingest_rss(session)
                 await session.commit()
             except Exception:
+                logger.exception("RSS ingestion failed")
                 await session.rollback()
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=settings.ingestion_interval_seconds)

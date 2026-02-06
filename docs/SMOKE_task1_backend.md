@@ -2,7 +2,7 @@
 
 ## Prereqs
 - Docker + Docker Compose
-- `.env` created from `.env.example` (set `WEB_ADMIN_ORIGIN` + `TMA_ORIGIN`)
+- `.env` created from `.env.example` (set `WEB_ADMIN_ORIGIN` + `TMA_ORIGIN` or `TMA_ORIGINS`)
 
 ## Steps
 1) Build and start services:
