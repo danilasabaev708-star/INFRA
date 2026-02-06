@@ -31,6 +31,7 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 _TAG_RE = re.compile(r"<[^>]+>")
 _HASH_TEXT_LIMIT = 500
+_FLOODWAIT_MAX_SECONDS = 300
 
 
 @dataclass
@@ -117,9 +118,10 @@ def _parse_telegram_identifier(raw_url: str) -> str | int:
         if candidate:
             return candidate if candidate.startswith("@") else f"@{candidate}"
         return value
-    if value.lstrip("-").isdigit():
+    try:
         return int(value)
-    return value
+    except ValueError:
+        return value
 
 
 def _extract_reddit_subreddit(raw_url: str | None) -> str | None:
@@ -129,8 +131,9 @@ def _extract_reddit_subreddit(raw_url: str | None) -> str | None:
     if value.startswith("r/"):
         slug = value.split("/", 1)[1].strip("/")
         return slug or None
-    if "reddit.com" in value:
-        parsed = urlparse(value if "://" in value else f"https://{value}")
+    parsed = urlparse(value if "://" in value else f"https://{value}")
+    host = parsed.netloc.lower()
+    if host == "reddit.com" or host.endswith(".reddit.com"):
         parts = [part for part in parsed.path.split("/") if part]
         for idx, part in enumerate(parts):
             if part == "r" and idx + 1 < len(parts):
@@ -159,8 +162,11 @@ async def ingest_telegram_source(
     identifier = _parse_telegram_identifier(source.url)
     state = dict(source.state or {})
     last_message_id = state.get("last_message_id")
-    if isinstance(last_message_id, str) and last_message_id.isdigit():
-        last_message_id = int(last_message_id)
+    if isinstance(last_message_id, str):
+        try:
+            last_message_id = int(last_message_id)
+        except ValueError:
+            last_message_id = None
     if not isinstance(last_message_id, int):
         last_message_id = None
     last_message_date = None
@@ -183,8 +189,9 @@ async def ingest_telegram_source(
                 continue
             messages.append(message)
     except FloodWaitError as exc:
-        logger.warning("Telegram FloodWait for source %s: %s seconds", source.id, exc.seconds)
-        await asyncio.sleep(exc.seconds)
+        sleep_seconds = min(exc.seconds, _FLOODWAIT_MAX_SECONDS)
+        logger.warning("Telegram FloodWait for source %s: %s seconds", source.id, sleep_seconds)
+        await asyncio.sleep(sleep_seconds)
         return 0
     except Exception as exc:
         logger.exception("Telegram ingestion failed for source %s", source.id)
