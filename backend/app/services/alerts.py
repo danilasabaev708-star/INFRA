@@ -55,11 +55,16 @@ async def create_alert(
 
 
 async def resolve_alert(session: AsyncSession, dedup_key: str, message: str) -> Alert:
-    return await create_alert(
-        session=session,
+    now = datetime.now(timezone.utc)
+    alert = Alert(
         dedup_key=dedup_key,
         title="RESOLVED",
         message=message,
         severity="info",
         status="resolved",
+        last_sent_at=now,
     )
+    session.add(alert)
+    await session.flush()
+    await _send_telegram_message(f"RESOLVED\n{message}")
+    return alert
