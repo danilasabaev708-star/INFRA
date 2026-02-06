@@ -125,6 +125,18 @@ async def update_source(
     return SourceOut.model_validate(source)
 
 
+@router.get("/sources/{source_id}/state")
+async def get_source_state(
+    source_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    result = await session.execute(select(Source).where(Source.id == source_id))
+    source = result.scalar_one_or_none()
+    if not source:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Источник не найден.")
+    return {"id": source.id, "state": source.state or {}}
+
+
 @router.delete("/sources/{source_id}")
 async def delete_source(
     source_id: int,

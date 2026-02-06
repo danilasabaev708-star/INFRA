@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     web_search_cache_minutes_min: int = Field(default=5, alias="WEB_SEARCH_CACHE_MIN")
     web_search_cache_minutes_max: int = Field(default=30, alias="WEB_SEARCH_CACHE_MAX")
     ingestion_interval_seconds: int = Field(default=60, alias="INGESTION_INTERVAL_SECONDS")
+    telethon_api_id: int | None = Field(default=None, alias="TELETHON_API_ID")
+    telethon_api_hash: str = Field(default="", alias="TELETHON_API_HASH")
+    telethon_session: str = Field(default="", alias="TELETHON_SESSION")
+    reddit_client_id: str = Field(default="", alias="REDDIT_CLIENT_ID")
+    reddit_client_secret: str = Field(default="", alias="REDDIT_CLIENT_SECRET")
+    reddit_user_agent: str = Field(default="INFRA/1.0", alias="REDDIT_USER_AGENT")
 
     @property
     def cors_origins(self) -> list[str]:
