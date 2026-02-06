@@ -10,7 +10,7 @@ from app.api.deps import require_admin_session
 from app.core.rate_limits import PlanTier
 from app.db.session import get_session
 from app.models.alert import Alert
-from app.models.item import Item
+from app.models.item import Item, ItemTopic
 from app.models.metric import Metric
 from app.models.org import Org, OrgMember
 from app.models.source import Source
@@ -20,7 +20,10 @@ from app.models.user import User
 from app.schemas import (
     AlertMuteRequest,
     AlertOut,
+    ItemAdminOut,
     ItemOut,
+    ItemTopicLockRequest,
+    ItemTopicOut,
     ManualGrantRequest,
     ManualRevokeRequest,
     MetricOut,
@@ -45,6 +48,26 @@ from app.services.corp import create_invite
 from app.services.alerts import resolve_alert as emit_resolved_alert
 
 router = APIRouter(dependencies=[Depends(require_admin_session)])
+
+
+async def _get_item_topics(session: AsyncSession, item_id: int) -> list[ItemTopicOut]:
+    rows = await session.execute(
+        select(ItemTopic, Topic).join(Topic, ItemTopic.topic_id == Topic.id).where(
+            ItemTopic.item_id == item_id
+        )
+    )
+    topics: list[ItemTopicOut] = []
+    for item_topic, topic in rows.all():
+        topics.append(
+            ItemTopicOut(
+                topic_id=item_topic.topic_id,
+                topic_name=topic.name,
+                locked=item_topic.locked,
+                score=item_topic.score,
+                assigned_by=item_topic.assigned_by,
+            )
+        )
+    return topics
 
 
 @router.get("/overview")
@@ -186,6 +209,42 @@ async def list_items_admin(
         stmt.order_by(Item.published_at.desc().nullslast(), Item.id.desc()).limit(limit)
     )
     return [ItemOut.model_validate(item) for item in result.scalars().all()]
+
+
+@router.get("/items/{item_id}", response_model=ItemAdminOut)
+async def get_item_admin(
+    item_id: int,
+    session: AsyncSession = Depends(get_session),
+) -> ItemAdminOut:
+    result = await session.execute(select(Item).where(Item.id == item_id))
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Материал не найден.")
+    topics = await _get_item_topics(session, item_id)
+    payload = ItemOut.model_validate(item).model_dump()
+    return ItemAdminOut(**payload, sentinel_json=item.sentinel_json, topics=topics)
+
+
+@router.post("/items/{item_id}/topics/lock", response_model=list[ItemTopicOut])
+async def lock_item_topics(
+    item_id: int,
+    payload: ItemTopicLockRequest = ItemTopicLockRequest(),
+    session: AsyncSession = Depends(get_session),
+) -> list[ItemTopicOut]:
+    result = await session.execute(select(Item).where(Item.id == item_id))
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Материал не найден.")
+    stmt = select(ItemTopic).where(ItemTopic.item_id == item_id)
+    if payload.topic_ids:
+        stmt = stmt.where(ItemTopic.topic_id.in_(payload.topic_ids))
+    rows = (await session.execute(stmt)).scalars().all()
+    if not rows:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Темы не найдены.")
+    for row in rows:
+        row.locked = True
+    await session.commit()
+    return await _get_item_topics(session, item_id)
 
 
 @router.get("/alerts", response_model=list[AlertOut])

@@ -22,3 +22,22 @@ class ItemOut(BaseModel):
     trust_score: int | None = None
     trust_status: str | None = None
     created_at: datetime
+
+
+class ItemTopicOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    topic_id: int
+    topic_name: str
+    locked: bool
+    score: float | None = None
+    assigned_by: str
+
+
+class ItemAdminOut(ItemOut):
+    sentinel_json: dict | None = None
+    topics: list[ItemTopicOut] = []
+
+
+class ItemTopicLockRequest(BaseModel):
+    topic_ids: list[int] | None = None
