@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     litellm_url: str | None = Field(default=None, alias="LITELLM_URL")
     litellm_model: str | None = Field(default=None, alias="LITELLM_MODEL")
     litellm_api_key: str | None = Field(default=None, alias="LITELLM_API_KEY")
+    litellm_timeout_seconds: int = Field(default=20, alias="LITELLM_TIMEOUT_SECONDS")
     chroma_url: str | None = Field(default=None, alias="CHROMA_URL")
     global_rate_limit_per_minute: int = Field(default=30, alias="GLOBAL_RATE_LIMIT_PER_MIN")
     metrics_interval_seconds: int = Field(default=60, alias="METRICS_INTERVAL_SECONDS")

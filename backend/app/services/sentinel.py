@@ -9,8 +9,20 @@ from app.models.item import Item
 from app.models.source import Source
 from app.services.websearch import WebSearchError, web_search_client
 
-_HYPE_MARKERS = ("шок", "сенсац", "breaking", "немыслим", "скандал", "слух")
-_IMPACT_MARKERS = ("миллиард", "санкц", "банкрот", "поглощ", "ipo", "acquisition")
+_HYPE_MARKERS = ("шок", "сенсация", "breaking", "немыслимо", "скандал", "слух")
+_IMPACT_MARKERS = ("миллиард", "санкции", "банкрот", "поглощение", "ipo", "acquisition")
+_MAX_QUERY_LENGTH = 120
+_MAX_CROSS_CHECK_MATCHES = 5
+_ENTITY_PATTERN = re.compile(r"\b[А-ЯA-Z][\w-]{2,}\b")
+_MAX_ENTITIES = 10
+_HIGH_IMPACT_TEXT_LENGTH = 800
+_MEDIUM_IMPACT_TEXT_LENGTH = 250
+_HYPE_PATTERN = re.compile(
+    r"\b(" + "|".join(re.escape(marker) for marker in _HYPE_MARKERS) + r")\b"
+)
+_IMPACT_PATTERN = re.compile(
+    r"\b(" + "|".join(re.escape(marker) for marker in _IMPACT_MARKERS) + r")\b"
+)
 
 
 @dataclass
@@ -22,33 +34,40 @@ class SentinelArtifacts:
 
 
 async def _run_cross_check(item: Item) -> dict[str, Any]:
-    query = item.title.strip() or item.text[:120]
-    result: dict[str, Any] = {"status": "missing", "matches": [], "query": query}
+    text = item.text or ""
+    query = item.title.strip() or text[:_MAX_QUERY_LENGTH]
+    result: dict[str, Any] = {
+        "status": "missing",
+        "matches": [],
+        "query": query,
+        "error": None,
+    }
     if not query:
         return result
     try:
         matches = await web_search_client.search(query)
     except WebSearchError as exc:
-        return {"status": "error", "error": exc.message, "matches": [], "query": query}
+        result["status"] = "error"
+        result["error"] = exc.message
+        return result
     sample = [
         {"title": match.get("title"), "url": match.get("url")}
-        for match in matches[:5]
+        for match in matches[:_MAX_CROSS_CHECK_MATCHES]
         if isinstance(match, dict)
     ]
     status = "ok" if sample else "missing"
     return {"status": status, "matches": sample, "query": query}
 
 
-def _run_logic_audit(item: Item) -> dict[str, Any]:
-    text = f"{item.title} {item.text}".lower()
-    flags = [marker for marker in _HYPE_MARKERS if marker in text]
+def _run_logic_audit(text: str) -> dict[str, Any]:
+    flags = sorted(set(_HYPE_PATTERN.findall(text)))
     status = "warning" if flags else "ok"
     return {"status": status, "flags": flags}
 
 
-def _run_entity_verify(item: Item) -> dict[str, Any]:
-    candidates = set(re.findall(r"\b[А-ЯA-Z][\w-]{2,}\b", item.title + " " + item.text))
-    entities = sorted(candidates)[:10]
+def _run_entity_verify(text: str) -> dict[str, Any]:
+    candidates = set(_ENTITY_PATTERN.findall(text))
+    entities = sorted(candidates)[:_MAX_ENTITIES]
     status = "ok" if entities else "limited"
     return {"status": status, "entities": entities}
 
@@ -58,7 +77,7 @@ def _run_trust_ledger(
     cross_check: dict[str, Any],
     logic_audit: dict[str, Any],
     entity_verify: dict[str, Any],
-    item: Item,
+    item_text: str,
 ) -> dict[str, Any]:
     score = source.trust_manual if source else 50
     if cross_check.get("status") == "ok":
@@ -80,10 +99,11 @@ def _run_trust_ledger(
     else:
         trust_status = "hype"
 
-    text = f"{item.title} {item.text}".lower()
-    if any(marker in text for marker in _IMPACT_MARKERS) or len(text) > 800:
+    has_impact_marker = bool(_IMPACT_PATTERN.search(item_text))
+    is_long_text = len(item_text) > _HIGH_IMPACT_TEXT_LENGTH
+    if has_impact_marker or is_long_text:
         impact = "high"
-    elif len(text) > 250:
+    elif len(item_text) > _MEDIUM_IMPACT_TEXT_LENGTH:
         impact = "medium"
     else:
         impact = "low"
@@ -92,10 +112,14 @@ def _run_trust_ledger(
 
 
 async def run_sentinel(item: Item, source: Source | None) -> SentinelArtifacts:
+    raw_text = f"{item.title} {item.text or ''}"
+    normalized_text = raw_text.lower()
     cross_check = await _run_cross_check(item)
-    logic_audit = _run_logic_audit(item)
-    entity_verify = _run_entity_verify(item)
-    trust_ledger = _run_trust_ledger(source, cross_check, logic_audit, entity_verify, item)
+    logic_audit = _run_logic_audit(normalized_text)
+    entity_verify = _run_entity_verify(raw_text)
+    trust_ledger = _run_trust_ledger(
+        source, cross_check, logic_audit, entity_verify, normalized_text
+    )
     artifacts = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "cross_check": cross_check,

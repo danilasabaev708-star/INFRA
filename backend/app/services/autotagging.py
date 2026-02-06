@@ -14,6 +14,9 @@ from app.services.llm_provider import LlmProviderError, get_llm_provider
 
 logger = logging.getLogger(__name__)
 _MAX_TOPICS = 3
+_MAX_LLM_TEXT_LENGTH = 1200
+_LLM_TOPIC_KEYS = ("topics", "topic_ids")
+_MAX_LLM_TOPICS = 50
 
 
 def _normalize_text(value: str) -> str:
@@ -50,12 +53,13 @@ async def _pick_topics_with_llm(
     provider = get_llm_provider()
     if not provider:
         return []
-    summary = f"{title}\n\n{text[:1200]}"
+    summary = f"{title}\n\n{text[:_MAX_LLM_TEXT_LENGTH]}"
+    limited_topics = topics[:_MAX_LLM_TOPICS]
     topic_catalog = [
         {"id": topic.id, "name": topic.name, "description": topic.description or ""}
-        for topic in topics
+        for topic in limited_topics
     ]
-    prompt = (
+    prompt_ru = (
         "Выбери 1-3 темы, которые лучше всего подходят к материалу. "
         "Ответь JSON-массивом идентификаторов тем, например: [1,2]."
     )
@@ -63,7 +67,10 @@ async def _pick_topics_with_llm(
         response = await provider.chat(
             [
                 {"role": "system", "content": "Ты помощник, который выбирает темы."},
-                {"role": "user", "content": f"{prompt}\n\nТемы: {json.dumps(topic_catalog)}\n\nТекст: {summary}"},
+                {
+                    "role": "user",
+                    "content": f"{prompt_ru}\n\nТемы: {json.dumps(topic_catalog)}\n\nТекст: {summary}",
+                },
             ]
         )
     except LlmProviderError:
@@ -74,11 +81,16 @@ async def _pick_topics_with_llm(
     except json.JSONDecodeError:
         return []
     if isinstance(parsed, dict):
-        parsed = parsed.get("topics") or parsed.get("topic_ids") or []
+        for key in _LLM_TOPIC_KEYS:
+            if key in parsed:
+                parsed = parsed.get(key) or []
+                break
+        else:
+            parsed = []
     if not isinstance(parsed, list):
         return []
-    name_to_id = {topic.name.lower(): topic.id for topic in topics}
-    valid_ids = {topic.id for topic in topics}
+    name_to_id = {topic.name.lower(): topic.id for topic in limited_topics}
+    valid_ids = {topic.id for topic in limited_topics}
     selected: list[int] = []
     for value in parsed:
         topic_id: int | None = None
@@ -121,7 +133,9 @@ async def assign_topics(session: AsyncSession, item: Item) -> list[ItemTopic]:
     if scored and _is_clear_leader(scored):
         selected_topic_ids = [topic.id for topic, _ in scored[:_MAX_TOPICS]]
     else:
-        selected_topic_ids = await _pick_topics_with_llm(topics, item.title, item.text)
+        selected_topic_ids = await _pick_topics_with_llm(
+            topics, item.title, item.text or ""
+        )
 
     if not selected_topic_ids and scored:
         selected_topic_ids = [topic.id for topic, _ in scored[:_MAX_TOPICS]]
@@ -131,6 +145,7 @@ async def assign_topics(session: AsyncSession, item: Item) -> list[ItemTopic]:
 
     selected_scores = {topic.id: score for topic, score in scored}
 
+    # Overwrite only unlocked auto-assignments while preserving locked topics.
     await session.execute(
         delete(ItemTopic).where(
             ItemTopic.item_id == item.id,

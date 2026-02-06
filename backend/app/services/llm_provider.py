@@ -32,14 +32,16 @@ class LlmProvider:
             "messages": messages,
             "temperature": 0.2,
         }
-        async with httpx.AsyncClient(timeout=20) as client:
+        async with httpx.AsyncClient(timeout=settings.litellm_timeout_seconds) as client:
             response = await client.post(url, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()
         try:
             return data["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
-            raise LlmProviderError("Неверный ответ LLM.") from exc
+            raise LlmProviderError(
+                "Invalid LLM response: missing choices[0].message.content."
+            ) from exc
 
 
 def get_llm_provider() -> LlmProvider | None:

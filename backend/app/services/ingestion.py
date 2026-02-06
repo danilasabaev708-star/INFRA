@@ -139,7 +139,10 @@ async def ingest_rss_source(session: AsyncSession, source: Source) -> int:
             await assign_topics(session, item)
             await apply_sentinel(item, source)
         except Exception:
-            logger.exception("Post-ingestion pipeline failed for item %s", item.title)
+            logger.exception(
+                "Post-ingestion pipeline failed for item %s; continuing ingestion",
+                item.title,
+            )
         added += 1
         if published_at and (newest_seen is None or published_at > newest_seen):
             newest_seen = published_at

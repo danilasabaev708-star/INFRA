@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -228,18 +228,24 @@ async def get_item_admin(
 @router.post("/items/{item_id}/topics/lock", response_model=list[ItemTopicOut])
 async def lock_item_topics(
     item_id: int,
-    payload: ItemTopicLockRequest = ItemTopicLockRequest(),
+    payload: ItemTopicLockRequest | None = Body(default=None),
     session: AsyncSession = Depends(get_session),
 ) -> list[ItemTopicOut]:
+    request_payload = payload or ItemTopicLockRequest()
     result = await session.execute(select(Item).where(Item.id == item_id))
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Материал не найден.")
     stmt = select(ItemTopic).where(ItemTopic.item_id == item_id)
-    if payload.topic_ids:
-        stmt = stmt.where(ItemTopic.topic_id.in_(payload.topic_ids))
+    if request_payload.topic_ids:
+        stmt = stmt.where(ItemTopic.topic_id.in_(request_payload.topic_ids))
     rows = (await session.execute(stmt)).scalars().all()
     if not rows:
+        if request_payload.topic_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Указанные темы не привязаны к материалу.",
+            )
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Темы не найдены.")
     for row in rows:
         row.locked = True

@@ -14,7 +14,8 @@
 
 2) Insert at least one topic with keywords:
    ```bash
-   docker compose exec db psql -U infra -d infra -c "insert into topics (name, description, keywords, created_at, updated_at) values ('Технологии', 'AI/ML', '[\"ai\", \"ml\", \"искусственный интеллект\"]', now(), now());"
+   docker compose exec db psql -U infra -d infra -c "insert into topics (name, description, keywords, created_at, updated_at)
+   values ('Технологии', 'AI/ML', '[\"ai\", \"ml\", \"искусственный интеллект\"]', now(), now());"
    ```
 
 3) Add an RSS source and wait 1–2 minutes:

@@ -21,28 +21,31 @@ async def test_autotagging_respects_locked_topics(session):
     await session.refresh(topic_locked)
     await session.refresh(topic_auto)
 
+    title = "AI banking update"
+    text = "AI solutions help the bank to reduce risk."
+    url = "http://example.com/1"
     item = Item(
         source_id=source.id,
         external_id="1",
-        url="http://example.com/1",
-        title="AI banking update",
-        text="AI solutions help the bank to reduce risk.",
+        url=url,
+        title=title,
+        text=text,
         published_at=None,
-        content_hash=compute_content_hash("AI banking update", "http://example.com/1", "AI solutions"),
+        content_hash=compute_content_hash(title, url, text),
         lang="en",
         is_job=False,
     )
     session.add(item)
     await session.flush()
 
-    locked = ItemTopic(
+    locked_topic = ItemTopic(
         item_id=item.id,
         topic_id=topic_locked.id,
         locked=True,
         score=0.9,
         assigned_by="admin",
     )
-    session.add(locked)
+    session.add(locked_topic)
     await session.commit()
 
     await assign_topics(session, item)
