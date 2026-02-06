@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import admin, admin_auth, health, public
 from app.core.config import get_settings
+from app.services.ingestion import ingestion_loop
 from app.services.metrics import metrics_loop
 
 
@@ -15,9 +16,10 @@ from app.services.metrics import metrics_loop
 async def lifespan(_: FastAPI):
     stop_event = asyncio.Event()
     metrics_task = asyncio.create_task(metrics_loop(stop_event))
+    ingestion_task = asyncio.create_task(ingestion_loop(stop_event))
     yield
     stop_event.set()
-    await metrics_task
+    await asyncio.gather(metrics_task, ingestion_task)
 
 
 app = FastAPI(title="INFRA", lifespan=lifespan)
@@ -25,7 +27,7 @@ settings = get_settings()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.web_admin_origin],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
