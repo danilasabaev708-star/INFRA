@@ -6,7 +6,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import admin, health, public
+from app.api.routes import admin, admin_auth, health, public
+from app.core.config import get_settings
 from app.services.metrics import metrics_loop
 
 
@@ -20,10 +21,11 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="INFRA", lifespan=lifespan)
+settings = get_settings()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[settings.web_admin_origin],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -31,6 +33,7 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(public.router, prefix="/api/public", tags=["public"])
+app.include_router(admin_auth.router, prefix="/api/admin/auth", tags=["admin-auth"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 
 

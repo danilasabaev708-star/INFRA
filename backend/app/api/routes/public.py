@@ -7,13 +7,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.core.rate_limits import PlanTier
 from app.db.session import get_session
+from app.models.org import Org
 from app.models.topic import Topic
 from app.models.user import User
 from app.schemas import (
     AiRequest,
     AiResponse,
     AuthResponse,
+    CorpInviteAcceptRequest,
     InitDataRequest,
+    OrgPublicOut,
     TopicOut,
     UserOut,
     UserSettingsUpdate,
@@ -25,6 +28,19 @@ from app.services.jobs import JobsAccessError, ensure_jobs_access
 
 router = APIRouter()
 
+
+async def _apply_user_settings(
+    update: UserSettingsUpdate, user: User, session: AsyncSession
+) -> UserOut:
+    if update.jobs_enabled is not None:
+        if user.plan_tier != PlanTier.PRO:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Jobs доступны только на PRO.")
+        user.jobs_enabled = update.jobs_enabled
+    for field, value in update.model_dump(exclude={"jobs_enabled"}, exclude_unset=True).items():
+        setattr(user, field, value)
+    await session.commit()
+    await session.refresh(user)
+    return UserOut.model_validate(user)
 
 @router.post("/auth/telegram", response_model=AuthResponse)
 async def auth_telegram(
@@ -47,15 +63,16 @@ async def update_settings(
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_session),
 ) -> UserOut:
-    if update.jobs_enabled is not None:
-        if user.plan_tier != PlanTier.PRO:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Jobs доступны только на PRO.")
-        user.jobs_enabled = update.jobs_enabled
-    for field, value in update.model_dump(exclude={"jobs_enabled"}, exclude_unset=True).items():
-        setattr(user, field, value)
-    await session.commit()
-    await session.refresh(user)
-    return UserOut.model_validate(user)
+    return await _apply_user_settings(update, user, session)
+
+
+@router.patch("/profile", response_model=UserOut)
+async def update_profile(
+    update: UserSettingsUpdate,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> UserOut:
+    return await _apply_user_settings(update, user, session)
 
 
 @router.get("/topics", response_model=list[TopicOut])
@@ -114,6 +131,25 @@ async def accept_corp_invite(
         invite = await accept_invite(session, token, user.id)
         await session.commit()
         return {"message": "Вы добавлены в редакцию.", "invite_id": invite.id}
+    except ValueError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.post("/corp/accept-invite", response_model=OrgPublicOut)
+async def accept_corp_invite_public(
+    payload: CorpInviteAcceptRequest,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+) -> OrgPublicOut:
+    try:
+        invite = await accept_invite(session, payload.token, user.id)
+        result = await session.execute(select(Org).where(Org.id == invite.org_id))
+        org = result.scalar_one_or_none()
+        if not org:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Организация не найдена.")
+        await session.commit()
+        return OrgPublicOut.model_validate(org)
     except ValueError as exc:
         await session.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
