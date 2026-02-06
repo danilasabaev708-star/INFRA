@@ -46,3 +46,36 @@ async def test_ingest_rss_source_inserts_items(session, monkeypatch):
 
     added_again = await ingestion.ingest_rss_source(session, source)
     assert added_again == 0
+
+
+@pytest.mark.asyncio
+async def test_ingest_rss_source_marks_jobs(session, monkeypatch):
+    source = Source(
+        name="jobs",
+        source_type="rss",
+        url="http://example.com/jobs",
+        job_keywords=["вакансия", "hiring"],
+    )
+    session.add(source)
+    await session.commit()
+    await session.refresh(source)
+
+    entries = [
+        {
+            "title": "Hiring backend engineer",
+            "link": "http://example.com/jobs/1",
+            "summary": "Открыта вакансия в команде.",
+            "id": "job-1",
+            "published_parsed": time.gmtime(1_700_000_100),
+        }
+    ]
+    feed = DummyFeed(entries, feed={"language": "ru"})
+    monkeypatch.setattr(ingestion.feedparser, "parse", lambda url: feed)
+
+    added = await ingestion.ingest_rss_source(session, source)
+    assert added == 1
+    await session.commit()
+
+    item = (await session.execute(select(Item).order_by(Item.id.desc()))).scalars().first()
+    assert item is not None
+    assert item.is_job is True

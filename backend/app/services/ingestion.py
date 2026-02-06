@@ -18,6 +18,7 @@ from app.db.session import SessionLocal
 from app.models.item import Item
 from app.models.source import Source
 from app.services.autotagging import assign_topics
+from app.services.delivery import enqueue_instant_delivery
 from app.services.sentinel import apply_sentinel
 
 settings = get_settings()
@@ -45,6 +46,20 @@ def _normalize_lang(value: str | None) -> str:
         return "ru"
     normalized = value.split(",")[0].strip()
     return normalized[:8] if normalized else "ru"
+
+
+def _is_job_post(source: Source, title: str, text: str) -> bool:
+    keywords = [keyword.strip().lower() for keyword in (source.job_keywords or []) if keyword]
+    content = f"{title}\n{text}".lower()
+    if keywords and any(keyword in content for keyword in keywords):
+        return True
+    if source.job_regex:
+        try:
+            if re.search(source.job_regex, content, flags=re.IGNORECASE):
+                return True
+        except re.error:
+            logger.warning("Invalid job regex on source %s", source.id)
+    return False
 
 
 def compute_content_hash(title: str, url: str | None, text: str) -> str:
@@ -122,6 +137,7 @@ async def ingest_rss_source(session: AsyncSession, source: Source) -> int:
         exists = await session.execute(select(Item.id).where(Item.content_hash == content_hash))
         if exists.scalar_one_or_none():
             continue
+        is_job = _is_job_post(source, title, text)
         item = Item(
             source_id=source.id,
             external_id=entry.get("id") or entry.get("guid"),
@@ -131,13 +147,14 @@ async def ingest_rss_source(session: AsyncSession, source: Source) -> int:
             published_at=published_at,
             content_hash=content_hash,
             lang=lang,
-            is_job=False,
+            is_job=is_job,
         )
         session.add(item)
         await session.flush()
         try:
             await assign_topics(session, item)
             await apply_sentinel(item, source)
+            await enqueue_instant_delivery(session, item)
         except Exception:
             logger.exception(
                 "Post-ingestion pipeline failed for item %s; continuing ingestion",
