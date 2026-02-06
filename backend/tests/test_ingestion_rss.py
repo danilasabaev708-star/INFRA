@@ -11,8 +11,9 @@ from app.services import ingestion
 
 
 class DummyFeed:
-    def __init__(self, entries: list[dict]):
+    def __init__(self, entries: list[dict], feed: dict | None = None):
         self.entries = entries
+        self.feed = feed or {}
 
 
 @pytest.mark.asyncio
@@ -31,7 +32,7 @@ async def test_ingest_rss_source_inserts_items(session, monkeypatch):
             "published_parsed": time.gmtime(1_700_000_000),
         }
     ]
-    feed = DummyFeed(entries)
+    feed = DummyFeed(entries, feed={"language": "en"})
     monkeypatch.setattr(ingestion.feedparser, "parse", lambda url: feed)
 
     added = await ingestion.ingest_rss_source(session, source)

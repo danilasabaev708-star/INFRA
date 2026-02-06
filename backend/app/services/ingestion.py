@@ -83,7 +83,11 @@ async def ingest_reddit() -> IngestionResult:
 async def ingest_rss_source(session: AsyncSession, source: Source) -> int:
     if not source.url:
         return 0
-    feed = await asyncio.to_thread(feedparser.parse, source.url)
+    try:
+        feed = await asyncio.to_thread(feedparser.parse, source.url)
+    except Exception:
+        logger.exception("RSS fetch failed for source %s", source.id)
+        return 0
     entries = list(getattr(feed, "entries", []) or [])
     feed_meta = getattr(feed, "feed", {}) or {}
     feed_lang = None
