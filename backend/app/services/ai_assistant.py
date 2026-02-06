@@ -9,6 +9,7 @@ from app.services.llm_provider import LlmProviderError, get_llm_provider
 logger = logging.getLogger(__name__)
 _BULLET_MARKERS = ("•", "-", "*", "—")
 _SENTENCE_SPLIT = re.compile(r"[.!?]+")
+_FILLER_REPEAT = 30
 
 
 def clarification_question() -> str:
@@ -19,7 +20,7 @@ def _format_bullets(text: str) -> str:
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     bullets: list[str] = []
     for line in lines:
-        if line[0] in _BULLET_MARKERS:
+        if line and line[0] in _BULLET_MARKERS:
             bullets.append(line.lstrip("".join(_BULLET_MARKERS)).strip())
     if not bullets:
         parts = [part.strip() for part in re.split(r"[•\n]", text) if part.strip()]
@@ -46,7 +47,7 @@ def _ensure_report_length(text: str, filler: str) -> str:
         if len(filler_text) <= need:
             break
     if len(cleaned) < 1500:
-        cleaned = cleaned + "\n\n" + ("Дополнительные детали. " * 30)
+        cleaned = cleaned + "\n\n" + ("Дополнительные детали. " * _FILLER_REPEAT)
         cleaned = cleaned[:1500].rstrip()
     return cleaned
 
