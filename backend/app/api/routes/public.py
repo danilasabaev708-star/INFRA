@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.core.rate_limits import PlanTier
 from app.db.session import get_session
+from app.models.item import Item
 from app.models.org import Org
 from app.models.topic import Topic
 from app.models.user import User
@@ -16,12 +17,14 @@ from app.schemas import (
     AuthResponse,
     CorpInviteAcceptRequest,
     InitDataRequest,
+    ItemOut,
     OrgPublicOut,
     TopicOut,
     UserOut,
     UserSettingsUpdate,
     UserTopicsUpdate,
 )
+from app.services.ai_assistant import generate_bulleted_answer
 from app.services.ai_usage import RateLimitError, check_and_record_usage
 from app.services.corp import accept_invite
 from app.services.jobs import JobsAccessError, ensure_jobs_access
@@ -98,12 +101,23 @@ async def update_topics(
 @router.get("/jobs")
 async def list_jobs(
     user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
 ) -> dict:
     try:
         ensure_jobs_access(user)
     except JobsAccessError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=exc.message) from exc
-    return {"items": [], "message": "Найдено 0 вакансий"}
+    result = await session.execute(
+        select(Item)
+        .where(Item.is_job.is_(True))
+        .order_by(Item.published_at.desc().nullslast(), Item.id.desc())
+        .limit(50)
+    )
+    items = result.scalars().all()
+    return {
+        "items": [ItemOut.model_validate(item) for item in items],
+        "message": f"Найдено {len(items)} вакансий",
+    }
 
 
 @router.post("/ai/ask", response_model=AiResponse)
@@ -118,7 +132,8 @@ async def ai_ask(
     except RateLimitError as exc:
         await session.rollback()
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=exc.message) from exc
-    return AiResponse(message="Запрос принят. Ответ будет доступен позже.")
+    answer = await generate_bulleted_answer(payload.prompt)
+    return AiResponse(message=answer)
 
 
 @router.post("/corp/invites/{token}")
