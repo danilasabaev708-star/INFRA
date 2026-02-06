@@ -8,7 +8,7 @@ from app.schemas.financials import (
     SubscriptionSummaryOut,
     SubscriptionSummaryTierOut,
 )
-from app.schemas.item import ItemOut
+from app.schemas.item import ItemAdminOut, ItemOut, ItemTopicLockRequest, ItemTopicOut
 from app.schemas.metric import MetricOut
 from app.schemas.org import (
     CorpInviteAcceptRequest,
@@ -44,6 +44,9 @@ __all__ = [
     "SubscriptionSummaryOut",
     "SubscriptionSummaryTierOut",
     "ItemOut",
+    "ItemAdminOut",
+    "ItemTopicOut",
+    "ItemTopicLockRequest",
     "MetricOut",
     "CorpInviteAcceptRequest",
     "OrgCreate",

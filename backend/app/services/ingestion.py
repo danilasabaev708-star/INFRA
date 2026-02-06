@@ -17,6 +17,8 @@ from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.models.item import Item
 from app.models.source import Source
+from app.services.autotagging import assign_topics
+from app.services.sentinel import apply_sentinel
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -132,6 +134,15 @@ async def ingest_rss_source(session: AsyncSession, source: Source) -> int:
             is_job=False,
         )
         session.add(item)
+        await session.flush()
+        try:
+            await assign_topics(session, item)
+            await apply_sentinel(item, source)
+        except Exception:
+            logger.exception(
+                "Post-ingestion pipeline failed for item %s; continuing ingestion",
+                item.title,
+            )
         added += 1
         if published_at and (newest_seen is None or published_at > newest_seen):
             newest_seen = published_at
