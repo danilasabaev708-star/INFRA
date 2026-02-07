@@ -76,15 +76,17 @@ class WebSearchClient:
                     await asyncio.sleep(backoff + random.random())
                     backoff *= 2
                     continue
-                if 300 <= response.status_code < 400:
-                    raise WebSearchError("Поиск вернул редирект.")
-                if response.status_code == 429 or response.status_code >= 500:
+                status_code = response.status_code
+                if 200 <= status_code < 300:
+                    data = response.json()
+                    return data.get("results", [])
+                if status_code == 429 or status_code >= 500:
                     await asyncio.sleep(backoff + random.random())
                     backoff *= 2
                     continue
+                if 300 <= status_code < 400:
+                    raise WebSearchError("Поиск вернул редирект.")
                 response.raise_for_status()
-                data = response.json()
-                return data.get("results", [])
         raise WebSearchError("Поиск временно недоступен.")
 
 

@@ -16,12 +16,12 @@ router = APIRouter()
 settings = get_settings()
 
 
-def _cookie_secure() -> bool:
-    return settings.app_env.lower() in {"prod", "production"}
-
-
 def _is_prod() -> bool:
     return settings.app_env.lower() in {"prod", "production"}
+
+
+def _cookie_secure() -> bool:
+    return _is_prod()
 
 
 @router.post("/login")
