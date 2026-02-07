@@ -39,7 +39,7 @@ class WebSearchClient:
             return None
         parsed = urlparse(settings.openserp_url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise WebSearchError("Некорректный URL поиска.")
+            raise WebSearchError("OPENSERP_URL должен быть полным http/https URL.")
         return settings.openserp_url.rstrip("/")
 
     async def search(self, query: str) -> list[dict[str, Any]]:
@@ -85,9 +85,9 @@ class WebSearchClient:
                     backoff *= 2
                     continue
                 if 300 <= status_code < 400:
-                    raise WebSearchError("Поиск вернул редирект.")
+                    raise WebSearchError("Поиск вернул редирект: проверьте OPENSERP_URL.")
                 response.raise_for_status()
-        raise WebSearchError("Поиск временно недоступен.")
+        raise WebSearchError("Поиск временно недоступен после 3 попыток.")
 
 
 web_search_client = WebSearchClient()

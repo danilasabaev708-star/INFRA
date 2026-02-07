@@ -61,10 +61,12 @@ def validate_init_data(init_data: str, bot_token: str) -> InitData:
     try:
         auth_date = int(auth_date_raw)
     except ValueError as exc:
-        raise ValueError("Некорректный auth_date.") from exc
+        raise ValueError("auth_date должен быть целым unix timestamp.") from exc
     now_ts = int(time.time())
-    if auth_date <= 0 or auth_date > now_ts + _MAX_INIT_DATA_FUTURE_SKEW_SECONDS:
-        raise ValueError("Некорректный auth_date.")
+    if auth_date <= 0:
+        raise ValueError("auth_date должен быть положительным.")
+    if auth_date > now_ts + _MAX_INIT_DATA_FUTURE_SKEW_SECONDS:
+        raise ValueError("auth_date слишком далеко в будущем.")
     if now_ts - auth_date > settings.init_data_max_age_seconds:
         raise ValueError("Истёк срок действия initData.")
 
