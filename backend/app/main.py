@@ -27,11 +27,12 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="INFRA", lifespan=lifespan)
 settings = get_settings()
 validate_settings(settings)
+cors_origins = settings.cors_origins or ["*"]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
+    allow_origins=cors_origins,
+    allow_credentials=bool(settings.cors_origins),
     allow_methods=["*"],
     allow_headers=["*"],
 )
