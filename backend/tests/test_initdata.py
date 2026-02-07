@@ -9,6 +9,7 @@ from urllib.parse import urlencode
 import pytest
 
 from app.core.config import get_settings
+from app.core.replay_cache import replay_cache
 from app.core.security import validate_init_data
 
 
@@ -22,6 +23,13 @@ def _build_init_data(bot_token: str, auth_date: int | None = None) -> str:
     secret_key = hmac.new(b"WebAppData", bot_token.encode("utf-8"), hashlib.sha256).digest()
     calculated_hash = hmac.new(secret_key, data_check_string.encode("utf-8"), hashlib.sha256).hexdigest()
     return urlencode({**data, "hash": calculated_hash})
+
+
+@pytest.fixture(autouse=True)
+def _clear_replay_cache():
+    replay_cache.clear()
+    yield
+    replay_cache.clear()
 
 
 def test_validate_init_data():
@@ -46,3 +54,20 @@ def test_expired_init_data(monkeypatch):
     with pytest.raises(ValueError):
         validate_init_data(init_data, token)
     get_settings.cache_clear()
+
+
+def test_replay_init_data_rejected():
+    token = "TEST_TOKEN"
+    get_settings.cache_clear()
+    init_data = _build_init_data(token)
+    validate_init_data(init_data, token)
+    with pytest.raises(ValueError):
+        validate_init_data(init_data, token)
+
+
+def test_future_init_data_rejected():
+    token = "TEST_TOKEN"
+    get_settings.cache_clear()
+    init_data = _build_init_data(token, auth_date=int(time.time()) + 120)
+    with pytest.raises(ValueError):
+        validate_init_data(init_data, token)

@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import admin, admin_auth, health, public
-from app.core.config import get_settings
+from app.core.config import get_settings, validate_settings
 from app.services.delivery import delivery_loop
 from app.services.ingestion import ingestion_loop
 from app.services.metrics import metrics_loop
@@ -26,6 +26,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="INFRA", lifespan=lifespan)
 settings = get_settings()
+validate_settings(settings)
 
 app.add_middleware(
     CORSMiddleware,

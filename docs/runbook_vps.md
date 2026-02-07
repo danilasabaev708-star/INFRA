@@ -17,4 +17,12 @@ docker compose ps
 docker compose exec backend alembic upgrade head
 ```
 
+После миграций убедитесь, что ревизии совпадают:
+
+```bash
+docker compose exec backend alembic current
+docker compose exec backend alembic heads
+```
+
 Healthchecks используют `127.0.0.1`. Torch устанавливается через CPU‑индекс.
+Backend/Web Admin/TMA по умолчанию привязаны к `127.0.0.1`, публикуйте их через reverse proxy или firewall.

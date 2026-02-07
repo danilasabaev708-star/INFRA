@@ -38,11 +38,18 @@ class Settings(BaseSettings):
     litellm_timeout_seconds: int = Field(default=20, alias="LITELLM_TIMEOUT_SECONDS")
     chroma_url: str | None = Field(default=None, alias="CHROMA_URL")
     global_rate_limit_per_minute: int = Field(default=30, alias="GLOBAL_RATE_LIMIT_PER_MIN")
+    public_rate_limit_per_minute: int = Field(default=60, alias="PUBLIC_RATE_LIMIT_PER_MIN")
+    public_rate_limit_window_seconds: int = Field(default=60, alias="PUBLIC_RATE_LIMIT_WINDOW_SECONDS")
     metrics_interval_seconds: int = Field(default=60, alias="METRICS_INTERVAL_SECONDS")
     metrics_retention_days: int = Field(default=183, alias="METRICS_RETENTION_DAYS")
     web_search_cache_minutes_min: int = Field(default=5, alias="WEB_SEARCH_CACHE_MIN")
     web_search_cache_minutes_max: int = Field(default=30, alias="WEB_SEARCH_CACHE_MAX")
+    web_search_cache_max_entries: int = Field(default=500, alias="WEB_SEARCH_CACHE_MAX_ENTRIES")
     ingestion_interval_seconds: int = Field(default=60, alias="INGESTION_INTERVAL_SECONDS")
+    ingestion_request_timeout_seconds: int = Field(
+        default=15, alias="INGESTION_REQUEST_TIMEOUT_SECONDS"
+    )
+    ingestion_request_retries: int = Field(default=2, alias="INGESTION_REQUEST_RETRIES")
     telethon_api_id: int | None = Field(default=None, alias="TELETHON_API_ID")
     telethon_api_hash: str = Field(default="", alias="TELETHON_API_HASH")
     telethon_session: str = Field(default="", alias="TELETHON_SESSION")
@@ -74,3 +81,26 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def _is_prod(settings: Settings) -> bool:
+    return settings.app_env.lower() in {"prod", "production"}
+
+
+def _is_bcrypt_hash(value: str) -> bool:
+    return value.startswith("$2a$") or value.startswith("$2b$") or value.startswith("$2y$")
+
+
+def validate_settings(settings: Settings) -> None:
+    if not _is_prod(settings):
+        return
+    if settings.admin_panel_password:
+        raise ValueError("ADMIN_PANEL_PASSWORD нельзя использовать в production.")
+    if not settings.admin_panel_password_hash:
+        raise ValueError("ADMIN_PANEL_PASSWORD_HASH обязателен в production.")
+    if not _is_bcrypt_hash(settings.admin_panel_password_hash):
+        raise ValueError("ADMIN_PANEL_PASSWORD_HASH должен быть bcrypt-хешем.")
+    if len(settings.admin_jwt_secret) < 32:
+        raise ValueError("ADMIN_JWT_SECRET слишком короткий для production.")
+    if any("*" in origin for origin in settings.cors_origins):
+        raise ValueError("CORS origins с '*' запрещены при allow_credentials в production.")
