@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user
+from app.core.public_rate_limit import enforce_public_rate_limit
 from app.core.rate_limits import PlanTier
 from app.db.session import get_session
 from app.models.item import Item
@@ -29,7 +30,7 @@ from app.services.ai_usage import RateLimitError, check_and_record_usage
 from app.services.corp import accept_invite
 from app.services.jobs import JobsAccessError, ensure_jobs_access
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(enforce_public_rate_limit)])
 
 
 async def _apply_user_settings(

@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 import asyncpraw
 import feedparser
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from telethon import TelegramClient
 from telethon.errors import FloodWaitError
@@ -32,6 +33,19 @@ logger = logging.getLogger(__name__)
 _TAG_RE = re.compile(r"<[^>]+>")
 _HASH_TEXT_LIMIT = 500
 _FLOODWAIT_MAX_SECONDS = 300
+
+
+async def _run_with_retries(coro_factory, retries: int, timeout_seconds: int):
+    attempts = max(1, retries)
+    backoff = 1
+    for attempt in range(attempts):
+        try:
+            return await asyncio.wait_for(coro_factory(), timeout=timeout_seconds)
+        except Exception:
+            if attempt >= attempts - 1:
+                raise
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, timeout_seconds)
 
 
 @dataclass
@@ -177,17 +191,30 @@ async def ingest_telegram_source(
         except ValueError:
             last_message_date = None
     try:
-        entity = await client.get_entity(identifier)
-        messages: list[object] = []
-        async for message in client.iter_messages(
-            entity, min_id=last_message_id or 0, reverse=True, limit=100
-        ):
-            if last_message_id and getattr(message, "id", 0) <= last_message_id:
-                continue
-            message_date = _ensure_utc(getattr(message, "date", None))
-            if last_message_date and message_date and message_date <= last_message_date:
-                continue
-            messages.append(message)
+        entity = await _run_with_retries(
+            lambda: client.get_entity(identifier),
+            settings.ingestion_request_retries,
+            settings.ingestion_request_timeout_seconds,
+        )
+
+        async def _collect_messages() -> list[object]:
+            collected: list[object] = []
+            async for message in client.iter_messages(
+                entity, min_id=last_message_id or 0, reverse=True, limit=100
+            ):
+                if last_message_id and getattr(message, "id", 0) <= last_message_id:
+                    continue
+                message_date = _ensure_utc(getattr(message, "date", None))
+                if last_message_date and message_date and message_date <= last_message_date:
+                    continue
+                collected.append(message)
+            return collected
+
+        messages = await _run_with_retries(
+            _collect_messages,
+            settings.ingestion_request_retries,
+            settings.ingestion_request_timeout_seconds,
+        )
     except FloodWaitError as exc:
         sleep_seconds = min(exc.seconds, _FLOODWAIT_MAX_SECONDS)
         logger.warning("Telegram FloodWait for source %s: %s seconds", source.id, sleep_seconds)
@@ -237,7 +264,12 @@ async def ingest_telegram_source(
             is_job=is_job,
         )
         session.add(item)
-        await session.flush()
+        try:
+            await session.flush()
+        except IntegrityError:
+            await session.rollback()
+            await session.refresh(source)
+            continue
         try:
             await assign_topics(session, item)
             await apply_sentinel(item, source)
@@ -308,12 +340,21 @@ async def ingest_reddit_source(
         last_created_utc = None
     try:
         subreddit = reddit.subreddit(subreddit_name)
-        posts: list[object] = []
-        async for submission in subreddit.new(limit=100):
-            created = float(getattr(submission, "created_utc", 0) or 0)
-            if last_created_utc and created <= last_created_utc:
-                break
-            posts.append(submission)
+
+        async def _collect_posts() -> list[object]:
+            collected: list[object] = []
+            async for submission in subreddit.new(limit=100):
+                created = float(getattr(submission, "created_utc", 0) or 0)
+                if last_created_utc and created <= last_created_utc:
+                    break
+                collected.append(submission)
+            return collected
+
+        posts = await _run_with_retries(
+            _collect_posts,
+            settings.ingestion_request_retries,
+            settings.ingestion_request_timeout_seconds,
+        )
     except Exception as exc:
         logger.exception("Reddit ingestion failed for source %s", source.id)
         await create_alert(
@@ -356,7 +397,12 @@ async def ingest_reddit_source(
             is_job=is_job,
         )
         session.add(item)
-        await session.flush()
+        try:
+            await session.flush()
+        except IntegrityError:
+            await session.rollback()
+            await session.refresh(source)
+            continue
         try:
             await assign_topics(session, item)
             await apply_sentinel(item, source)
@@ -398,6 +444,7 @@ async def ingest_reddit(session: AsyncSession) -> IngestionResult:
         client_id=settings.reddit_client_id,
         client_secret=settings.reddit_client_secret,
         user_agent=settings.reddit_user_agent,
+        requestor_kwargs={"timeout": settings.ingestion_request_timeout_seconds},
     )
     try:
         for source in sources:
@@ -411,7 +458,11 @@ async def ingest_rss_source(session: AsyncSession, source: Source) -> int:
     if not source.url:
         return 0
     try:
-        feed = await asyncio.to_thread(feedparser.parse, source.url)
+        feed = await _run_with_retries(
+            lambda: asyncio.to_thread(feedparser.parse, source.url),
+            settings.ingestion_request_retries,
+            settings.ingestion_request_timeout_seconds,
+        )
     except Exception:
         logger.exception("RSS fetch failed for source %s", source.id)
         return 0
@@ -460,7 +511,12 @@ async def ingest_rss_source(session: AsyncSession, source: Source) -> int:
             is_job=is_job,
         )
         session.add(item)
-        await session.flush()
+        try:
+            await session.flush()
+        except IntegrityError:
+            await session.rollback()
+            await session.refresh(source)
+            continue
         try:
             await assign_topics(session, item)
             await apply_sentinel(item, source)

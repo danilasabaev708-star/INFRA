@@ -34,6 +34,16 @@ class WebSearchClient:
         for query in expired:
             self._cache.pop(query, None)
 
+    def _evict_overflow(self) -> None:
+        max_entries = settings.web_search_cache_max_entries
+        if max_entries <= 0:
+            return
+        while len(self._cache) > max_entries:
+            oldest = next(iter(self._cache), None)
+            if oldest is None:
+                break
+            self._cache.pop(oldest, None)
+
     def _openserp_base_url(self) -> str | None:
         if not settings.openserp_url:
             return None
@@ -59,6 +69,7 @@ class WebSearchClient:
             ttl_minutes = random.randint(settings.web_search_cache_minutes_min, settings.web_search_cache_minutes_max)
             ttl = ttl_minutes * 60
             self._cache[query] = (now + ttl, results)
+            self._evict_overflow()
             return results
 
     async def _fetch(self, query: str) -> list[dict[str, Any]]:

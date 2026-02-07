@@ -9,6 +9,7 @@ from typing import Any
 from urllib.parse import parse_qs
 
 from app.core.config import get_settings
+from app.core.replay_cache import replay_cache
 
 _MAX_INIT_DATA_FUTURE_SKEW_SECONDS = 60
 
@@ -26,7 +27,15 @@ def _data_check_string(data: dict[str, str]) -> str:
     return "\n".join(pairs)
 
 
-def validate_init_data(init_data: str, bot_token: str) -> InitData:
+def _replay_key(query_id: str | None, data_check_string: str, auth_date: int, user_id: int) -> str:
+    if query_id:
+        return f"query:{query_id}"
+    raw = f"{data_check_string}|{auth_date}|{user_id}"
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return f"hash:{digest}"
+
+
+def validate_init_data(init_data: str, bot_token: str, *, check_replay: bool = True) -> InitData:
     if not init_data:
         raise ValueError("Пустые данные авторизации.")
     if not bot_token:
@@ -72,6 +81,10 @@ def validate_init_data(init_data: str, bot_token: str) -> InitData:
 
     user_payload = json.loads(data["user"])
     user_id = int(user_payload["id"])
+    if check_replay:
+        token = _replay_key(data.get("query_id"), data_check_string, auth_date, user_id)
+        if replay_cache.check_and_store(token, settings.init_data_max_age_seconds):
+            raise ValueError("Повторное использование initData.")
     return InitData(
         user_id=user_id,
         auth_date=auth_date,
