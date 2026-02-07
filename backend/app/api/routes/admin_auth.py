@@ -20,8 +20,22 @@ def _cookie_secure() -> bool:
     return settings.app_env.lower() in {"prod", "production"}
 
 
+def _is_prod() -> bool:
+    return settings.app_env.lower() in {"prod", "production"}
+
+
 @router.post("/login")
 async def login(payload: AdminLoginRequest, response: Response) -> dict:
+    if _is_prod() and not settings.admin_panel_password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Админская авторизация не настроена.",
+        )
+    if _is_prod() and len(settings.admin_jwt_secret) < 32:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Админская авторизация не настроена.",
+        )
     if payload.username != settings.admin_panel_username or not verify_admin_password(
         payload.password, settings.admin_panel_password_hash, settings.admin_panel_password
     ):
