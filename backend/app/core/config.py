@@ -88,7 +88,7 @@ def _is_prod(settings: Settings) -> bool:
 
 
 def _is_bcrypt_hash(value: str) -> bool:
-    return value.startswith("$2a$") or value.startswith("$2b$") or value.startswith("$2y$")
+    return any(value.startswith(prefix) for prefix in ("$2a$", "$2b$", "$2y$"))
 
 
 def validate_settings(settings: Settings) -> None:
